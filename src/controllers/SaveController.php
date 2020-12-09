@@ -87,6 +87,7 @@ class SaveController extends Controller
         $sectionId = $request->getBodyParam('sectionId');
         $sectionUid = $request->getBodyParam('sectionUid');
         $sectionHandle = $request->getBodyParam('sectionHandle');
+        $cartAction = $request->getBodyParam('cartAction');
 
         $sectionService = Craft::$app->getSections();
 
@@ -112,33 +113,47 @@ class SaveController extends Controller
             throw new BadRequestHttpException('Section '.$section->handle.' does not allow guest submissions.');
         }
 
-        // Populate the entry
-        $entry = $this->_populateEntryModel($section, $sectionSettings, $request);
+        if($cartAction != "removeLineItem"){
+            // Populate the entry
+            $entry = $this->_populateEntryModel($section, $sectionSettings, $request);
 
-        // Fire an 'onBeforeSave' event
-        $event = new SaveEvent(['entry' => $entry]);
-        $this->trigger(self::EVENT_BEFORE_SAVE_ENTRY, $event);
+            // Fire an 'onBeforeSave' event
+            $event = new SaveEvent(['entry' => $entry]);
+            $this->trigger(self::EVENT_BEFORE_SAVE_ENTRY, $event);
 
-        if (!$event->isValid) {
-            return $this->_returnError($settings, $entry);
+            if (!$event->isValid) {
+                return $this->_returnError($settings, $entry);
+            }
+
+            if ($event->isSpam) {
+                Craft::info('Guest entry submission suspected to be spam.', __METHOD__);
+                // Pretend it worked.
+                return $this->_returnSuccess($entry, true);
+            }
+
+            // Try to save it
+            if ($sectionSettings->runValidation) {
+                $entry->setScenario(Element::SCENARIO_LIVE);
+            }
+
+            if (!Craft::$app->getElements()->saveElement($entry)) {
+                return $this->_returnError($settings, $entry);
+            }
+
+            return $this->_returnSuccess($entry);
+        }else{
+            $entryId = $request->getValidatedBodyParam('entryId');
+            $currentEntry = Entry::find()->id($entryId)->section($section->handle)->anyStatus()->one();
+
+            if (!$currentEntry) {
+                throw new BadRequestHttpException('Invalid entry ID: ' . $entryId);
+            }
+
+            if ($cartAction == "removeLineItem"){
+                Craft::$app->elements->deleteElement($currentEntry);
+            }
         }
-
-        if ($event->isSpam) {
-            Craft::info('Guest entry submission suspected to be spam.', __METHOD__);
-            // Pretend it worked.
-            return $this->_returnSuccess($entry, true);
-        }
-
-        // Try to save it
-        if ($sectionSettings->runValidation) {
-            $entry->setScenario(Element::SCENARIO_LIVE);
-        }
-
-        if (!Craft::$app->getElements()->saveElement($entry)) {
-            return $this->_returnError($settings, $entry);
-        }
-
-        return $this->_returnSuccess($entry);
+        
     }
 
     // Private Methods
