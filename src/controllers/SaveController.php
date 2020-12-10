@@ -128,7 +128,7 @@ class SaveController extends Controller
             if ($event->isSpam) {
                 Craft::info('Guest entry submission suspected to be spam.', __METHOD__);
                 // Pretend it worked.
-                return $this->_returnSuccess($entry, true);
+                return $this->_returnSuccess($entry, true, $request);
             }
 
             // Try to save it
@@ -137,10 +137,10 @@ class SaveController extends Controller
             }
 
             if (!Craft::$app->getElements()->saveElement($entry)) {
-                return $this->_returnError($settings, $entry);
+                return $this->_returnError($settings, $entry, $request);
             }
 
-            return $this->_returnSuccess($entry);
+            return $this->_returnSuccess($entry, false,  $request);
         }else{
             $entryId = $request->getValidatedBodyParam('entryId');
             $currentEntry = Entry::find()->id($entryId)->section($section->handle)->anyStatus()->one();
@@ -166,7 +166,7 @@ class SaveController extends Controller
      * @param       $isSpam
      * @return Response
      */
-    private function _returnSuccess(Entry $entry, $isSpam = false): Response
+    private function _returnSuccess(Entry $entry, $isSpam = false, Request $request): Response
     {
         if ($this->hasEventHandlers(self::EVENT_AFTER_SAVE_ENTRY)) {
             $this->trigger(self::EVENT_AFTER_SAVE_ENTRY, new SaveEvent([
@@ -188,9 +188,10 @@ class SaveController extends Controller
             ]);
         }
 
-        Craft::$app->getSession()->setNotice(Craft::t('guest-entries', 'Entry saved.'));
+        Craft::$app->getSession()->setNotice(Craft::t('site', 'Added to cart.'));
 
-        return $this->redirectToPostedUrl($entry);
+        return $this->redirect($request->getAbsoluteUrl());
+        //return $this->redirectToPostedUrl($entry);
     }
 
     /**
@@ -200,7 +201,7 @@ class SaveController extends Controller
      * @param Entry $entry
      * @return Response|null
      */
-    private function _returnError(Settings $settings, Entry $entry)
+    private function _returnError(Settings $settings, Entry $entry, Request $request)
     {
         if ($this->hasEventHandlers(self::EVENT_AFTER_ERROR)) {
             $this->trigger(self::EVENT_AFTER_ERROR, new SaveEvent([
